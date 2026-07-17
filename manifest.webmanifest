@@ -1,0 +1,17 @@
+{
+	"name": "Just One",
+	"short_name": "Just One",
+	"start_url": ".",
+	"display": "standalone",
+	"theme_color": "#ffffff",
+	"background_color": "#ffffff",
+	"icons": [
+		{
+			"src": "img/icon-192.png",
+			"sizes": "192x192"
+		}, {
+			"src": "img/icon-512.png",
+			"sizes": "512x512"
+		}
+	]
+}

@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Just One</title>
+		<style>
+			:root {
+				--primary: #4F46E5;
+				--primary-hover: #4338CA;
+				--bg: #F3F4F6;
+				--surface: #FFFFFF;
+				--text: #1F2937;
+				--text-muted: #6B7280;
+				--danger: #EF4444;
+				--danger-hover: #DC2626;
+				--success: #10B981;
+				--success-hover: #059669;
+				--border: #E5E7EB;
+			}
+
+			body {
+				font-family: system-ui, -apple-system, sans-serif;
+				background-color: var(--bg);
+				color: var(--text);
+				line-height: 1.5;
+				margin: 0;
+				padding: 20px;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				min-height: 100vh;
+			}
+
+			h1, h2, h3 { margin-top: 0; }
+			
+			h1 { 
+				color: var(--primary); 
+				font-size: 2.5rem; 
+				text-align: center; 
+				margin-bottom: 0.5rem; 
+				letter-spacing: -0.05em;
+			}
+
+			#app-container {
+				background: var(--surface);
+				padding: 2.5rem;
+				border-radius: 16px;
+				box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+				width: 100%;
+				max-width: 500px;
+				position: relative;
+				box-sizing: border-box;
+			}
+
+			/* Timer badge */
+			#timer {
+				position: absolute;
+				top: 1.5rem;
+				right: 1.5rem;
+				background: var(--danger);
+				color: white;
+				padding: 0.25rem 0.75rem;
+				border-radius: 999px;
+				font-weight: bold;
+				font-size: 1.25rem;
+				box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.3);
+			}
+
+			/* Buttons */
+			button {
+				background-color: var(--primary);
+				color: white;
+				border: none;
+				padding: 0.75rem 1.5rem;
+				border-radius: 8px;
+				font-size: 1rem;
+				font-weight: 600;
+				cursor: pointer;
+				transition: background-color 0.15s ease;
+				width: 100%;
+				margin-bottom: 0.5rem;
+			}
+			button:hover { background-color: var(--primary-hover); }
+			
+			button.secondary { background-color: var(--text-muted); }
+			button.secondary:hover { background-color: #4B5563; }
+			
+			button.danger { background-color: var(--danger); }
+			button.danger:hover { background-color: var(--danger-hover); }
+
+			button.success { background-color: var(--success); }
+			button.success:hover { background-color: var(--success-hover); }
+
+			.btn-row {
+				display: flex;
+				gap: 0.75rem;
+			}
+			.btn-row button {
+				margin-bottom: 0;
+			}
+
+			/* Inputs */
+			input {
+				width: 100%;
+				box-sizing: border-box;
+				padding: 0.85rem;
+				border: 2px solid var(--border);
+				border-radius: 8px;
+				font-size: 1rem;
+				margin-bottom: 1rem;
+				outline: none;
+				transition: border-color 0.15s ease;
+			}
+			input:focus { border-color: var(--primary); }
+
+			.form-group { margin-bottom: 1.25rem; }
+			.form-group label { 
+				display: block; 
+				margin-bottom: 0.5rem; 
+				font-weight: 600; 
+				color: var(--text-muted); 
+				font-size: 0.9rem;
+			}
+
+			/* Cards */
+			.card {
+				background: var(--bg);
+				padding: 2.5rem 1rem;
+				border: 2px solid var(--border);
+				border-radius: 12px;
+				text-align: center;
+				margin: 1.5rem 0;
+				font-size: 2rem;
+				font-weight: 800;
+				color: var(--primary);
+				letter-spacing: 0.05em;
+				text-transform: uppercase;
+			}
+
+			/* Clue Pair Voting */
+			.clue-pair {
+				background: var(--bg);
+				padding: 1.25rem;
+				border-radius: 12px;
+				margin-bottom: 1rem;
+				border: 1px solid var(--border);
+			}
+			.clue-pair p.pair-text { 
+				margin: 0 0 1rem 0; 
+				font-size: 1.25rem; 
+				font-weight: 700; 
+				text-align: center; 
+				color: var(--text);
+			}
+			.clue-pair p.voted-text {
+				text-align: center;
+				color: var(--success);
+				font-weight: 600;
+				margin: 0;
+			}
+
+			/* Lists */
+			ul { list-style: none; padding: 0; margin: 0 0 1.5rem 0; }
+			li { 
+				background: var(--bg); 
+				padding: 0.75rem 1rem; 
+				margin-bottom: 0.5rem; 
+				border-radius: 8px; 
+				font-weight: 500;
+				border: 1px solid var(--border);
+			}
+			
+			.role-msg {
+				text-align: center;
+				font-weight: 600;
+				color: var(--text-muted);
+				background: #EEF2FF;
+				padding: 0.75rem;
+				border-radius: 8px;
+				margin-bottom: 1rem;
+			}
+
+			.hidden { display: none !important; }
+			section { display: none; }
+			section.active { display: block; }
+			
+			.stats-box {
+				display: flex;
+				justify-content: space-between;
+				background: var(--bg);
+				padding: 1rem;
+				border-radius: 8px;
+				margin-bottom: 1rem;
+				font-weight: bold;
+				border: 1px solid var(--border);
+			}
+			.stats-box span { color: var(--primary); font-size: 1.25rem; }
+
+			hr { border: 0; height: 1px; background: var(--border); margin: 1.5rem 0; }
+		</style>
+		<style>
+			/* Playful card-table theme */
+			:root {
+				--primary: #6c5ce7;
+				--primary-hover: #5848d8;
+				--primary-soft: #eeeaff;
+				--bg: #f7f3ff;
+				--surface: rgba(255, 255, 255, 0.94);
+				--text: #19213a;
+				--text-muted: #667085;
+				--danger: #ff647c;
+				--danger-hover: #ee4e68;
+				--success: #17b890;
+				--success-hover: #109b79;
+				--border: #e8e3f4;
+				--sun: #ffd166;
+				--coral: #ff8a65;
+				--shadow: 0 28px 70px rgba(70, 50, 120, 0.16);
+			}
+
+			* { box-sizing: border-box; }
+
+			body {
+				position: relative;
+				isolation: isolate;
+				justify-content: center;
+				padding: 48px 20px;
+				background:
+					radial-gradient(circle at 12% 12%, rgba(255, 209, 102, 0.42), transparent 24rem),
+					radial-gradient(circle at 90% 85%, rgba(108, 92, 231, 0.2), transparent 28rem),
+					linear-gradient(145deg, #fffaf0 0%, #f7f3ff 52%, #eef8ff 100%);
+				font-family: Inter, ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif;
+				overflow-x: hidden;
+			}
+
+			body::before,
+			body::after {
+				content: "";
+				position: fixed;
+				z-index: -1;
+				width: 190px;
+				height: 250px;
+				border: 2px solid rgba(108, 92, 231, 0.16);
+				border-radius: 28px;
+				transform: rotate(16deg);
+			}
+
+			body::before { top: -70px; right: 7%; }
+			body::after { bottom: -110px; left: 6%; transform: rotate(-14deg); }
+
+			.page-shell { width: min(100%, 560px); }
+
+			.brand {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 14px;
+				margin-bottom: 6px;
+			}
+
+			.brand-mark {
+				display: grid;
+				place-items: center;
+				width: 54px;
+				height: 62px;
+				border: 3px solid var(--text);
+				border-radius: 14px;
+				background: var(--sun);
+				box-shadow: 5px 5px 0 var(--text);
+				transform: rotate(-5deg);
+				font-size: 1.65rem;
+				font-weight: 900;
+				color: var(--text);
+			}
+
+			.brand-copy { text-align: left; }
+
+			.brand-copy h1 {
+				margin: -3px 0 0;
+				color: var(--text);
+				font-size: clamp(2.35rem, 9vw, 3.35rem);
+				line-height: 0.95;
+				letter-spacing: -0.065em;
+			}
+
+			.eyebrow {
+				margin: 0;
+				color: var(--primary);
+				font-size: 0.72rem;
+				font-weight: 900;
+				letter-spacing: 0.16em;
+				text-transform: uppercase;
+			}
+
+			.brand-tagline {
+				margin: 12px 0 24px;
+				text-align: center;
+				color: var(--text-muted);
+				font-weight: 650;
+			}
+
+			#app-container {
+				width: 100%;
+				max-width: none;
+				padding: clamp(24px, 6vw, 42px);
+				border: 1px solid rgba(255, 255, 255, 0.9);
+				border-radius: 28px;
+				background: var(--surface);
+				box-shadow: var(--shadow), inset 0 0 0 1px rgba(108, 92, 231, 0.06);
+				backdrop-filter: blur(18px);
+				overflow: hidden;
+			}
+
+			#app-container::before {
+				content: "";
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 7px;
+				background: linear-gradient(90deg, var(--sun) 0 25%, var(--coral) 25% 50%, var(--primary) 50% 75%, var(--success) 75%);
+			}
+
+			#app-container > h1 { display: none; }
+
+			section.active { animation: section-in 260ms ease-out both; }
+
+			@keyframes section-in {
+				from { opacity: 0; transform: translateY(8px); }
+				to { opacity: 1; transform: translateY(0); }
+			}
+
+			h2 {
+				margin: 0 0 8px;
+				color: var(--text);
+				font-size: clamp(1.65rem, 5vw, 2.1rem);
+				line-height: 1.1;
+				letter-spacing: -0.035em;
+			}
+
+			h3 { color: var(--text); font-size: 0.88rem; letter-spacing: 0.08em; text-transform: uppercase; }
+
+			.section-copy {
+				margin: 0 0 24px;
+				color: var(--text-muted);
+				text-align: center;
+			}
+
+			.form-group { margin-bottom: 18px; }
+
+			.form-group label {
+				margin-bottom: 8px;
+				color: var(--text);
+				font-size: 0.82rem;
+				font-weight: 800;
+				letter-spacing: 0.025em;
+			}
+
+			input {
+				margin: 0;
+				padding: 14px 16px;
+				border: 2px solid var(--border);
+				border-radius: 14px;
+				background: #fbfaff;
+				color: var(--text);
+				font: inherit;
+				font-weight: 650;
+				box-shadow: inset 0 2px 4px rgba(50, 35, 90, 0.025);
+				transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+			}
+
+			input:focus {
+				border-color: var(--primary);
+				background: white;
+				box-shadow: 0 0 0 4px rgba(108, 92, 231, 0.12);
+			}
+
+			button {
+				min-height: 50px;
+				margin: 0;
+				padding: 13px 18px;
+				border: 0;
+				border-radius: 14px;
+				background: var(--primary);
+				box-shadow: 0 7px 0 #493ab4, 0 11px 24px rgba(108, 92, 231, 0.2);
+				font: inherit;
+				font-weight: 850;
+				letter-spacing: -0.01em;
+				transition: transform 130ms ease, box-shadow 130ms ease, background 130ms ease;
+			}
+
+			button:hover { background: var(--primary-hover); transform: translateY(-2px); }
+			button:active { transform: translateY(4px); box-shadow: 0 3px 0 #493ab4; }
+			button:focus-visible { outline: 4px solid rgba(108, 92, 231, 0.23); outline-offset: 3px; }
+			button[hidden], [hidden] { display: none !important; }
+
+			button.secondary {
+				background: #fff;
+				color: var(--text);
+				box-shadow: 0 7px 0 #d8d2e7, 0 11px 24px rgba(50, 35, 90, 0.08);
+			}
+
+			button.secondary:hover { background: #f8f6fc; }
+			button.success { box-shadow: 0 7px 0 #0b7c62, 0 11px 24px rgba(23, 184, 144, 0.2); }
+			button.danger { box-shadow: 0 7px 0 #bd3c51, 0 11px 24px rgba(255, 100, 124, 0.19); }
+
+			.btn-row { gap: 14px; margin-top: 26px; }
+			.btn-row button { flex: 1; }
+
+			#timer {
+				top: 20px;
+				right: 20px;
+				min-width: 58px;
+				padding: 8px 12px;
+				border: 3px solid white;
+				background: var(--danger);
+				box-shadow: 0 8px 20px rgba(255, 100, 124, 0.28);
+				font-size: 1rem;
+				text-align: center;
+			}
+
+			.room-chip {
+				display: table;
+				margin: 0 auto 22px;
+				padding: 8px 13px;
+				border: 1px solid #ddd5ff;
+				border-radius: 999px;
+				background: var(--primary-soft);
+				color: var(--primary);
+				font-size: 0.82rem;
+				font-weight: 850;
+				letter-spacing: 0.04em;
+			}
+
+			#lobby-players { display: grid; gap: 10px; margin-bottom: 18px; }
+
+			.player-item {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				margin: 0;
+				padding: 11px 13px;
+				border: 1px solid var(--border);
+				border-radius: 15px;
+				background: #fbfaff;
+			}
+
+			.player-item.is-you { border-color: #cbc2ff; background: var(--primary-soft); }
+
+			.player-avatar {
+				display: grid;
+				place-items: center;
+				width: 38px;
+				height: 38px;
+				border-radius: 12px;
+				background: var(--primary);
+				color: white;
+				font-weight: 900;
+			}
+
+			.player-label { flex: 1; color: var(--text); font-weight: 750; }
+			.player-badge { padding: 4px 8px; border-radius: 999px; background: white; color: var(--primary); font-size: 0.72rem; font-weight: 850; }
+
+			.role-msg {
+				margin: 18px 0;
+				padding: 13px 15px;
+				border: 1px solid #dcd5ff;
+				border-radius: 14px;
+				background: var(--primary-soft);
+				color: #4f4395;
+			}
+
+			.card {
+				position: relative;
+				margin: 22px 0 28px;
+				padding: clamp(34px, 9vw, 52px) 18px;
+				border: 3px solid var(--text);
+				border-radius: 22px;
+				background: linear-gradient(145deg, #fff8d9, #ffe89b);
+				box-shadow: 8px 8px 0 var(--text);
+				color: var(--text);
+				font-size: clamp(2rem, 8vw, 3rem);
+				letter-spacing: 0.02em;
+				transform: rotate(-1deg);
+			}
+
+			.card::before,
+			.card::after { content: "✦"; position: absolute; color: var(--coral); font-size: 1.1rem; }
+			.card::before { top: 14px; left: 17px; }
+			.card::after { right: 17px; bottom: 14px; }
+
+			.clue-pair {
+				padding: 18px;
+				border: 1px solid var(--border);
+				border-radius: 18px;
+				background: #fbfaff;
+				box-shadow: 0 8px 24px rgba(50, 35, 90, 0.06);
+			}
+
+			.stats-box { border: 0; border-radius: 16px; background: var(--primary-soft); }
+			hr { height: 1px; background: var(--border); margin: 22px 0; }
+
+			#guess-clues li,
+			#end-clues li {
+				border: 1px solid var(--border);
+				border-radius: 14px;
+				background: #fbfaff;
+			}
+
+			@media (max-width: 560px) {
+				body { justify-content: flex-start; padding: 26px 14px; }
+				.brand-mark { width: 46px; height: 54px; border-radius: 12px; box-shadow: 4px 4px 0 var(--text); }
+				.brand-tagline { margin-bottom: 18px; }
+				#app-container { border-radius: 22px; }
+				.btn-row { flex-direction: column; }
+				.card { box-shadow: 6px 6px 0 var(--text); }
+			}
+
+			@media (prefers-reduced-motion: reduce) {
+				*, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+			}
+		</style>
+	</head>
+
+	<body>
+		<div class="page-shell">
+			<header class="brand">
+				<div class="brand-mark" aria-hidden="true">1</div>
+				<div class="brand-copy">
+					<p class="eyebrow">Co-op word game</p>
+					<h1>Just One</h1>
+				</div>
+			</header>
+			<p class="brand-tagline">One word. One team. One chance.</p>
+		<div id="app-container">
+			<h1>Just One</h1>
+			<div id="timer" class="hidden"></div>
+			<main>
+				<!-- SETUP / JOIN -->
+				<section id="setup" class="active">
+					<h2>Bring the team together</h2>
+					<p class="section-copy">Create a private room or join your friends with the same room name.</p>
+					<div class="form-group">
+						<label for="player-name">Player Name</label>
+						<input id="player-name" value="Player1" placeholder="Enter your name" />
+					</div>
+					<div class="form-group">
+						<label for="game-name">Room Name</label>
+						<input id="game-name" value="Room1" placeholder="Enter room name" />
+					</div>
+					<div class="btn-row">
+						<button id="btn-create">Create Game</button>
+						<button id="btn-join" class="secondary">Join Game</button>
+					</div>
+				</section>
+
+				<!-- LOBBY -->
+				<section id="lobby">
+					<h2>Your team is assembling</h2>
+					<div class="room-chip">Room · <span id="lobby-game-name"></span></div>
+					<h3>Players Waiting</h3>
+					<ul id="lobby-players"></ul>
+					<p id="lobby-status" class="section-copy"></p>
+					<button id="btn-start" class="success" hidden>Start Game</button>
+				</section>
+
+				<!-- DRAW / SKIP VOTE -->
+				<section id="draw">
+					<h2>Meet the mystery word</h2>
+					<p id="draw-role-msg" class="role-msg"></p>
+					<div class="card" id="draw-word"></div>
+					<button id="btn-skip" class="danger">Vote to Skip Word</button>
+				</section>
+
+				<!-- CLUE INPUT -->
+				<section id="clue-input">
+					<h2>Write your clue</h2>
+					<p id="clue-role-msg" class="role-msg"></p>
+					<div class="card" id="clue-word"></div>
+					<div id="clue-form">
+						<input id="clue-text" type="text" placeholder="Type a single word..." autocomplete="off"/>
+						<button id="btn-submit-clue">Submit Clue</button>
+					</div>
+					<p id="clue-wait" class="hidden role-msg"></p>
+				</section>
+
+				<!-- SIMILARITY VOTING -->
+				<section id="vote-similarity">
+					<h2>Similarity Check</h2>
+					<p class="section-copy">
+						Are these clues too similar or invalid?<br/>(>50% Discard removes them)
+					</p>
+					<div id="pairs-container"></div>
+				</section>
+
+				<!-- GUESSING -->
+				<section id="guess">
+					<h2>Guess the Word</h2>
+					<p id="guess-role-msg" class="role-msg"></p>
+					<hr/>
+					<h3 style="text-align: center;">Valid Clues</h3>
+					<ul id="guess-clues" style="text-align: center; font-size: 1.25rem;"></ul>
+					<div id="guess-form" class="hidden">
+						<input id="guess-text" type="text" placeholder="Your guess..." autocomplete="off"/>
+						<button id="btn-submit-guess" class="success">Submit Guess</button>
+					</div>
+				</section>
+
+				<!-- ROUND END -->
+				<section id="round-end">
+					<h2>Round Results</h2>
+					<div class="card" id="end-word" style="margin-top: 0.5rem;"></div>
+					
+					<div class="stats-box">
+						<div>Team Score</div>
+						<span id="end-score"></span>
+					</div>
+					
+					<h3>Submitted Clues:</h3>
+					<ul id="end-clues"></ul>
+				</section>
+
+				<!-- GAME END -->
+				<section id="game-end">
+					<h2 style="text-align: center; color: var(--success); font-size: 2.5rem; margin-bottom: 0.5rem;">Game Over!</h2>
+					<p style="text-align: center; color: var(--text-muted);">Everyone has guessed once.</p>
+					<div class="card" style="font-size: 3rem; color: var(--text);">
+						Score: <span id="final-score" style="color: var(--primary);"></span>
+					</div>
+					<button class="secondary" onclick="location.reload()">Play Again</button>
+				</section>
+			</main>
+		</div>
+		</div>
+
+		<script type="module" src="client/client.js"></script>
+	</body>
+</html>

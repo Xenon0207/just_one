@@ -1,0 +1,12 @@
+{
+  "name": "just-one",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "npx tsc && npx rollup .build/client/app.js -f iife -o client/client.js",
+    "start": "deno run --allow-net --allow-read server/server.ts 8080"
+  },
+  "devDependencies": {
+    "rollup": "^2.3.2",
+    "typescript": "^4.9.5"
+  }
+}
