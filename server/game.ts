@@ -1,5 +1,5 @@
 import Player from "./player.ts";
-import { Phase, GameState, CluePair } from "../src/rules.ts";
+import { Phase, GameState, CluePair, RoundResult } from "../src/rules.ts";
 
 let games: Game[] = [];
 const GARBAGE_THRESHOLD = 30 * 60 * 1000;
@@ -26,6 +26,18 @@ async function loadSecretWords() {
 const CLUE_DICTIONARY = await loadClueDictionary();
 const SECRET_WORDS = await loadSecretWords();
 
+const PLAYER_PALETTES = {
+	5: ["#7C3AED", "#0369A1", "#047857", "#B45309", "#BE123C"],
+	10: ["#6D28D9", "#1D4ED8", "#0F766E", "#15803D", "#A16207", "#C2410C", "#BE123C", "#9D174D", "#4338CA", "#334155"],
+	20: ["#5B21B6", "#6D28D9", "#3730A3", "#1E40AF", "#075985", "#0E7490", "#115E59", "#047857", "#166534", "#3F6212", "#854D0E", "#92400E", "#9A3412", "#991B1B", "#9F1239", "#9D174D", "#86198F", "#701A75", "#4C1D95", "#374151"]
+} as const;
+
+function paletteForPlayerCount(playerCount: number): readonly string[] {
+	if (playerCount <= 5) return PLAYER_PALETTES[5];
+	if (playerCount <= 10) return PLAYER_PALETTES[10];
+	return PLAYER_PALETTES[20];
+}
+
 export default class Game {
 	_players: Player[] = [];
 	ts = performance.now();
@@ -39,6 +51,7 @@ export default class Game {
 	_timerInterval: ReturnType<typeof setInterval> | null = null;
 	_similarPairs: CluePair[] = [];
 	_teamScore = 0;
+	_roundResults: RoundResult[] = [];
 
 	static find(name: string) {
 		return games.filter(g => g.name == name)[0];
@@ -65,6 +78,7 @@ export default class Game {
 			if (p.name == player.name) { throw new Error(`Player "${player.name}" already exists in this game`); }
 		});
 		this._players.push(player);
+		this._assignDefaultColors();
 		this.ts = performance.now();
 		player.game = this;
 
@@ -76,6 +90,7 @@ export default class Game {
 		if (index == -1) { return; }
 
 		this._players.splice(index, 1);
+		this._assignDefaultColors();
 		this.ts = performance.now();
 		player.game = null;
 
@@ -93,7 +108,29 @@ export default class Game {
 		this._guesserIndex = -1;
 		this._teamScore = 0;
 		this._round = 0;
+		this._roundResults = [];
 		this._advanceSetupRound();
+	}
+
+	getAvailableColors() {
+		const basePalette = paletteForPlayerCount(this._players.length);
+		return Array.from(new Set([...basePalette, ...this._players.map(player => player.color)]));
+	}
+
+	setPlayerColor(player: Player, color: string) {
+		if (this.phase !== Phase.LOBBY) { throw new Error("Colors can only be changed in the lobby"); }
+		const normalized = color.toUpperCase();
+		if (!this.getAvailableColors().includes(normalized)) { throw new Error("Color is not available"); }
+		player.color = normalized;
+		player.colorCustomized = true;
+		this._notifyGameChange();
+	}
+
+	_assignDefaultColors() {
+		const palette = paletteForPlayerCount(this._players.length);
+		this._players.forEach((player, index) => {
+			if (!player.colorCustomized) player.color = palette[index % palette.length];
+		});
 	}
 
 	_advanceSetupRound() {
@@ -241,15 +278,17 @@ export default class Game {
 
 	voteDuplicate(player: Player, pairId: string, keep: boolean) {
 		if (this.phase !== Phase.VOTE_SIMILARITY || player.isGuesser) return;
-		if (player.votedDuplicatePairs[pairId] !== undefined) return; // already voted
-		
-		player.votedDuplicatePairs[pairId] = keep;
-		
 		const pair = this._similarPairs.find(p => p.id === pairId);
-		if (pair) {
-			if (keep) pair.votesKeep++;
-			else pair.votesDiscard++;
-		}
+		if (!pair) return;
+
+		const previousVote = player.votedDuplicatePairs[pairId];
+		if (previousVote === keep) return;
+		if (previousVote === true) pair.votesKeep--;
+		if (previousVote === false) pair.votesDiscard--;
+
+		player.votedDuplicatePairs[pairId] = keep;
+		if (keep) pair.votesKeep++;
+		else pair.votesDiscard++;
 
 		// Check if everyone has voted for all pairs
 		const totalVoters = this._players.length - 1; // excluding guesser
@@ -293,6 +332,28 @@ export default class Game {
 			this._teamScore++;
 		}
 
+		this._roundResults.push({
+			round: this._round,
+			guesserName: player.name,
+			guesserColor: player.color,
+			correct,
+			word: this._secretWord || "",
+			validClues: this._players
+				.filter(clueGiver => !clueGiver.isGuesser && clueGiver.clueValid)
+				.map(clueGiver => ({
+					playerName: clueGiver.name,
+					playerColor: clueGiver.color,
+					clue: clueGiver.clue || "(no clue)"
+				})),
+			invalidClues: this._players
+				.filter(clueGiver => !clueGiver.isGuesser && !clueGiver.clueValid)
+				.map(clueGiver => ({
+					playerName: clueGiver.name,
+					playerColor: clueGiver.color,
+					clue: clueGiver.clue || "(no clue)"
+				}))
+		});
+
 		this.phase = Phase.ROUND_END;
 		this._notifyGameChange();
 
@@ -307,6 +368,7 @@ export default class Game {
 			phase: this.phase,
 			isOwner: player === this.owner,
 			players: this._players.map(p => p.toJSON()),
+			availableColors: this.getAvailableColors(),
 			// Hide secret word from guesser unless round is over
 			secretWord: (this.phase === Phase.ROUND_END || this.phase === Phase.GAME_END || !player.isGuesser) ? this._secretWord : null,
 			guesserName: this._players[this._guesserIndex]?.name || null,
@@ -314,7 +376,8 @@ export default class Game {
 			similarPairs: this._similarPairs,
 			teamScore: this._teamScore,
 			round: this._round,
-			totalRounds: this._players.length
+			totalRounds: this._players.length,
+			roundResults: this._roundResults
 		};
 	}
 

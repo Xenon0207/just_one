@@ -12,6 +12,7 @@ export enum Phase {
 
 export interface PlayerState {
 	name: string;
+	color: string;
 	isGuesser: boolean;
 	hasVotedSkip: boolean;
 	clue: string | null;
@@ -27,10 +28,27 @@ export interface CluePair {
 	votesDiscard: number;
 }
 
+export interface RoundClue {
+	playerName: string;
+	playerColor: string;
+	clue: string;
+}
+
+export interface RoundResult {
+	round: number;
+	guesserName: string;
+	guesserColor: string;
+	correct: boolean;
+	word: string;
+	validClues: RoundClue[];
+	invalidClues: RoundClue[];
+}
+
 export interface GameState {
 	phase: Phase;
 	isOwner: boolean;
 	players: PlayerState[];
+	availableColors: string[];
 	secretWord: string | null; // Only sent to guesser at the end, or sent to clue givers always? Clue givers need it!
 	guesserName: string | null;
 	timerMs: number; // Remaining time
@@ -38,4 +56,5 @@ export interface GameState {
 	teamScore: number;
 	round: number;
 	totalRounds: number;
+	roundResults: RoundResult[];
 }

@@ -6,6 +6,8 @@ export default class Player {
 	key = Math.random().toString().replace(/\D/g, "");
 	game: Game | null = null;
 	jsonrpc: JsonRpc;
+	color = "#4338CA";
+	colorCustomized = false;
 	
 	// Game state specific to player
 	isGuesser = false;
@@ -35,6 +37,7 @@ export default class Player {
 	toJSON() {
 		return {
 			name: this.name,
+			color: this.color,
 			isGuesser: this.isGuesser,
 			hasVotedSkip: this.hasVotedSkip,
 			clue: this.clue,
@@ -71,6 +74,11 @@ export default class Player {
 			if (game.owner != this) { throw new Error("Only the game owner can start it"); }
 			this._log("starting the game");
 			game.start();
+		});
+
+		jsonrpc.expose("set-color", (color: string) => {
+			if (!this.game) { throw new Error("Not in game"); }
+			this.game.setPlayerColor(this, color);
 		});
 
 		jsonrpc.expose("quit-game", () => {
