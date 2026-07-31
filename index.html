@@ -393,6 +393,7 @@
 			button:hover { background: var(--primary-hover); transform: translateY(-2px); }
 			button:active { transform: translateY(4px); box-shadow: 0 3px 0 #493ab4; }
 			button:focus-visible { outline: 4px solid rgba(108, 92, 231, 0.23); outline-offset: 3px; }
+			button:disabled { cursor: wait; filter: grayscale(0.35); opacity: 0.68; transform: none; }
 			button[hidden], [hidden] { display: none !important; }
 
 			button.secondary {
@@ -407,6 +408,7 @@
 
 			.btn-row { gap: 14px; margin-top: 26px; }
 			.btn-row button { flex: 1; }
+			.lobby-actions { margin-top: 16px; }
 
 			#timer {
 				top: 20px;
@@ -638,7 +640,10 @@
 						<div id="color-options" class="color-options"></div>
 					</div>
 					<p id="lobby-status" class="section-copy"></p>
-					<button id="btn-start" class="success" hidden>Start Game</button>
+					<div class="btn-row lobby-actions">
+						<button id="btn-start" class="success" hidden>Start Game</button>
+						<button id="btn-leave" class="secondary">Leave Lobby</button>
+					</div>
 				</section>
 
 				<!-- DRAW / SKIP VOTE -->
@@ -695,6 +700,8 @@
 					
 					<h3>Submitted Clues:</h3>
 					<ul id="end-clues"></ul>
+					<p class="section-copy">Take your time. Any player can continue when everyone is ready.</p>
+					<button id="btn-next-round" class="success">Next Guesser</button>
 				</section>
 
 				<!-- GAME END -->
@@ -705,7 +712,8 @@
 						Score: <span id="final-score" style="color: var(--primary);"></span>
 					</div>
 					<div id="game-history" class="game-history"></div>
-					<button class="secondary" onclick="location.reload()">Play Again</button>
+					<p id="return-lobby-status" class="section-copy"></p>
+					<button id="btn-return-lobby" class="secondary">Return to Lobby</button>
 				</section>
 			</main>
 		</div>

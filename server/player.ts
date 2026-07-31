@@ -15,6 +15,7 @@ export default class Player {
 	clue: string | null = null;
 	clueValid: boolean | null = null;
 	votedDuplicatePairs: Record<string, boolean> = {};
+	readyForLobby = false;
 
 	constructor(ws: WebSocket) {
 		const io = {
@@ -42,7 +43,8 @@ export default class Player {
 			hasVotedSkip: this.hasVotedSkip,
 			clue: this.clue,
 			clueValid: this.clueValid,
-			votedDuplicatePairs: this.votedDuplicatePairs
+			votedDuplicatePairs: this.votedDuplicatePairs,
+			readyForLobby: this.readyForLobby
 		};
 	}
 
@@ -110,6 +112,16 @@ export default class Player {
 		jsonrpc.expose("submit-guess", (guess: string) => {
 			if (!this.game) throw new Error("Not in game");
 			this.game.submitGuess(this, guess);
+		});
+
+		jsonrpc.expose("next-round", () => {
+			if (!this.game) throw new Error("Not in game");
+			this.game.advanceAfterRound();
+		});
+
+		jsonrpc.expose("return-to-lobby", () => {
+			if (!this.game) throw new Error("Not in game");
+			this.game.returnToLobby(this);
 		});
 	}
 }

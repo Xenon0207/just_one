@@ -149,8 +149,8 @@
         { label: "Clues", rule: "Give exactly one word. Do not use the mystery word itself." },
         { label: "Review", rule: "Review similar clues. You may change your vote until everyone has voted." },
         { label: "Guess", rule: "The guesser gets one attempt using only the valid clues." },
-        { label: "Result", rule: "Review the answer, score, and which clues were kept or discarded." },
-        { label: "Summary", rule: "Every round is shown below in guesser order." }
+        { label: "Result", rule: "Review the answer and clues. Any player can continue when the group is ready." },
+        { label: "Summary", rule: "Review every round in guesser order, then everyone returns to the lobby together." }
     ];
     function stepIndexForPhase(phase) {
         switch (phase) {
@@ -350,6 +350,12 @@
                 const btnStart = document.getElementById("btn-start");
                 btnStart.hidden = !state.isOwner;
                 btnStart.onclick = () => rpc.call("start-game", []);
+                const btnLeave = document.getElementById("btn-leave");
+                btnLeave.onclick = async () => {
+                    btnLeave.disabled = true;
+                    await rpc.call("quit-game", []);
+                    location.reload();
+                };
                 const lobbyStatus = document.getElementById("lobby-status");
                 lobbyStatus.textContent = state.isOwner
                     ? "You're the host - start whenever everyone is ready."
@@ -491,12 +497,31 @@
                         list.appendChild(li);
                     }
                 });
+                const btnNext = document.getElementById("btn-next-round");
+                btnNext.disabled = false;
+                btnNext.textContent = state.round >= state.totalRounds ? "View Final Results" : "Next Guesser";
+                btnNext.onclick = async () => {
+                    btnNext.disabled = true;
+                    btnNext.textContent = "Continuing...";
+                    await rpc.call("next-round", []);
+                };
                 break;
             }
             case Phase.GAME_END: {
                 showSection("gameEnd");
                 document.getElementById("final-score").textContent = state.teamScore.toString();
                 renderGameHistory(state);
+                const readyCount = state.players.filter(player => player.readyForLobby).length;
+                const returnStatus = document.getElementById("return-lobby-status");
+                returnStatus.textContent = `${readyCount} of ${state.players.length} players are ready to return.`;
+                const btnReturn = document.getElementById("btn-return-lobby");
+                btnReturn.disabled = myPlayer.readyForLobby;
+                btnReturn.textContent = myPlayer.readyForLobby ? "Waiting for Everyone..." : "Return to Lobby";
+                btnReturn.onclick = async () => {
+                    btnReturn.disabled = true;
+                    btnReturn.textContent = "Waiting for Everyone...";
+                    await rpc.call("return-to-lobby", []);
+                };
                 break;
             }
         }

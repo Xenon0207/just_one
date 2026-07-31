@@ -26,17 +26,14 @@ async function loadSecretWords() {
 const CLUE_DICTIONARY = await loadClueDictionary();
 const SECRET_WORDS = await loadSecretWords();
 
-const PLAYER_PALETTES = {
-	5: ["#7C3AED", "#0369A1", "#047857", "#B45309", "#BE123C"],
-	10: ["#6D28D9", "#1D4ED8", "#0F766E", "#15803D", "#A16207", "#C2410C", "#BE123C", "#9D174D", "#4338CA", "#334155"],
-	20: ["#5B21B6", "#6D28D9", "#3730A3", "#1E40AF", "#075985", "#0E7490", "#115E59", "#047857", "#166534", "#3F6212", "#854D0E", "#92400E", "#9A3412", "#991B1B", "#9F1239", "#9D174D", "#86198F", "#701A75", "#4C1D95", "#374151"]
-} as const;
-
-function paletteForPlayerCount(playerCount: number): readonly string[] {
-	if (playerCount <= 5) return PLAYER_PALETTES[5];
-	if (playerCount <= 10) return PLAYER_PALETTES[10];
-	return PLAYER_PALETTES[20];
-}
+// One stable palette for every lobby. The most distinct colours come first,
+// followed by progressively closer alternatives. Colours recycle after 20.
+const PLAYER_PALETTE: readonly string[] = [
+	"#7C3AED", "#0369A1", "#047857", "#B45309", "#BE123C",
+	"#3730A3", "#0F766E", "#C2410C", "#9D174D", "#334155",
+	"#5B21B6", "#1D4ED8", "#075985", "#0E7490", "#166534",
+	"#3F6212", "#854D0E", "#9A3412", "#991B1B", "#701A75"
+];
 
 export default class Game {
 	_players: Player[] = [];
@@ -57,7 +54,7 @@ export default class Game {
 		return games.filter(g => g.name == name)[0];
 	}
 
-	constructor(readonly name: string, readonly owner: Player) {
+	constructor(readonly name: string, public owner: Player) {
 		if (Game.find(name)) { throw new Error(`The game "${name}" already exists`); }
 
 		this._log("created");
@@ -95,9 +92,14 @@ export default class Game {
 		player.game = null;
 
 		if (player == this.owner && this.phase == Phase.LOBBY) { return this.close("destroy"); }
+		if (player == this.owner && this._players.length) this.owner = this._players[0];
 
 		if (this._players.length) {
-			this._notifyGameChange();
+			if (this.phase === Phase.GAME_END && this._players.every(p => p.readyForLobby)) {
+				this._resetToLobby();
+			} else {
+				this._notifyGameChange();
+			}
 		} else {
 			this.close("destroy");
 		}
@@ -113,8 +115,7 @@ export default class Game {
 	}
 
 	getAvailableColors() {
-		const basePalette = paletteForPlayerCount(this._players.length);
-		return Array.from(new Set([...basePalette, ...this._players.map(player => player.color)]));
+		return [...PLAYER_PALETTE];
 	}
 
 	setPlayerColor(player: Player, color: string) {
@@ -127,9 +128,8 @@ export default class Game {
 	}
 
 	_assignDefaultColors() {
-		const palette = paletteForPlayerCount(this._players.length);
 		this._players.forEach((player, index) => {
-			if (!player.colorCustomized) player.color = palette[index % palette.length];
+			if (!player.colorCustomized) player.color = PLAYER_PALETTE[index % PLAYER_PALETTE.length];
 		});
 	}
 
@@ -141,7 +141,6 @@ export default class Game {
 		if (this._guesserIndex >= this._players.length) {
 			this.phase = Phase.GAME_END;
 			this._notifyGameChange();
-			setTimeout(() => this.close("over"), 10000); // Close after 10s
 			return;
 		}
 
@@ -150,6 +149,7 @@ export default class Game {
 			p.clue = null;
 			p.clueValid = null;
 			p.votedDuplicatePairs = {};
+			p.readyForLobby = false;
 		});
 
 		this._drawWord();
@@ -356,11 +356,41 @@ export default class Game {
 
 		this.phase = Phase.ROUND_END;
 		this._notifyGameChange();
+	}
 
-		// Go to next round after 5 seconds
-		setTimeout(() => {
-			this._advanceSetupRound();
-		}, 5000);
+	advanceAfterRound() {
+		if (this.phase !== Phase.ROUND_END) return;
+		this._advanceSetupRound();
+	}
+
+	returnToLobby(player: Player) {
+		if (this.phase !== Phase.GAME_END) return;
+		player.readyForLobby = true;
+		if (this._players.every(p => p.readyForLobby)) {
+			this._resetToLobby();
+		} else {
+			this._notifyGameChange();
+		}
+	}
+
+	_resetToLobby() {
+		this.clearTimer();
+		this.phase = Phase.LOBBY;
+		this._round = 0;
+		this._guesserIndex = -1;
+		this._secretWord = null;
+		this._similarPairs = [];
+		this._teamScore = 0;
+		this._roundResults = [];
+		this._players.forEach(player => {
+			player.isGuesser = false;
+			player.hasVotedSkip = false;
+			player.clue = null;
+			player.clueValid = null;
+			player.votedDuplicatePairs = {};
+			player.readyForLobby = false;
+		});
+		this._notifyGameChange();
 	}
 
 	getInfo(player: Player): GameState {

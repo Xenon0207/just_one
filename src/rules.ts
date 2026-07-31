@@ -18,6 +18,7 @@ export interface PlayerState {
 	clue: string | null;
 	clueValid: boolean | null; // null if not yet validated
 	votedDuplicatePairs: Record<string, boolean>; // pairId -> keep?
+	readyForLobby: boolean;
 }
 
 export interface CluePair {
