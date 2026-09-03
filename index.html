@@ -573,6 +573,39 @@
 				.hud-topline, .round-summary-header { align-items: flex-start; flex-direction: column; }
 			}
 
+			.pause-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; font-size: .8rem; color: #475569; }
+			.pause-controls button { width: auto; min-height: 34px; padding: 6px 12px; box-shadow: none; border: 1px solid var(--border); }
+			#connection-status { padding: 12px; color: #9a3412; background: #fff7ed; border-radius: 10px; }
+			.dictionary-option { display: flex; align-items: center; gap: 10px; font-size: .85rem; }
+			.dictionary-option input { width: 18px; height: 18px; flex: 0 0 auto; }
+			.guess-caption { min-height: 1.5em; margin: -14px 0 18px; text-align: center; font-size: .85rem; color: #64748b; overflow-wrap: anywhere; }
+			#end-score { display: inline-block; position: relative; }
+			#end-score.score-correct { color: #047857; }
+			.score-pop { animation: score-pop 450ms ease-out; }
+			.score-pop::after { content: "+1"; position: absolute; left: 110%; top: 0; font-size: 1rem; opacity: 0; animation: score-add 700ms ease-out; }
+			@keyframes score-pop { 0% { transform: scale(.92); } 45% { transform: scale(1.14); } 100% { transform: scale(1); } }
+			@keyframes score-add { 0%, 30% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-12px); } }
+			.summary-guess { display: block; margin-top: 4px; font-size: .8rem; color: #64748b; overflow-wrap: anywhere; }
+			.colored-clue strong { color: var(--player-color); overflow-wrap: anywhere; }
+			.submission-panel { padding: 16px; background: #f8fafc; border: 1px solid var(--border); border-radius: 16px; margin-top: 20px; }
+			.submission-panel p { font-size: .75rem; color: #64748b; }
+			.submission-panel ul { padding: 0; list-style: none; }
+			.submission-player { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; font-size: .85rem; overflow-wrap: anywhere; }
+			.submission-player small { color: #475569; font-size: .7rem; }
+			.submission-player .player-avatar { width: 30px; height: 30px; flex-shrink: 0; border-radius: 10px; }
+			.submission-player.submitted .player-avatar { box-shadow: 0 0 0 2px #16a34a, 0 0 10px 2px #86efac; }
+			@media (min-width: 1000px) {
+				.page-shell.clue-layout { width: 840px; }
+				#clue-input.active { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 28px; align-items: start; }
+				.submission-panel { margin-top: 0; }
+				.page-shell.summary-layout { width: min(1200px, 95vw); }
+				.summary-layout .game-history { gap: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+				.summary-layout .round-summary { display: grid; grid-template-columns: 1.1fr 1fr 1.5fr 1.5fr; gap: 16px; padding: 12px; border-radius: 0; box-shadow: none; }
+				.summary-layout .round-summary-header { flex-direction: column; align-items: start; justify-content: start; gap: 8px; }
+				.summary-layout .summary-word, .summary-layout .summary-clue-group h4 { margin: 0 0 6px; font-size: .8rem; }
+				.summary-layout .colored-clue { padding: 4px 6px; margin: 4px 0; gap: 5px; font-size: .85rem; }
+				.summary-layout .card { padding: 12px; margin: 12px 0; font-size: 1.5rem !important; box-shadow: 3px 3px 0 var(--text); transform: none; }
+			}
 			@media (prefers-reduced-motion: reduce) {
 				*, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 			}
@@ -592,6 +625,11 @@
 		<div id="app-container">
 			<h1>Just One</h1>
 			<div id="timer" class="hidden"></div>
+			<p id="connection-status" role="status" hidden></p>
+			<div class="pause-controls">
+				<button id="btn-pause" class="secondary" hidden>Pause Game</button>
+				<span id="pause-status" hidden>Paused by host · take your time</span>
+			</div>
 			<aside id="game-hud" class="game-hud hidden" aria-live="polite">
 				<div class="hud-topline">
 					<span class="hud-label">Current guesser</span>
@@ -640,6 +678,7 @@
 						<div id="color-options" class="color-options"></div>
 					</div>
 					<p id="lobby-status" class="section-copy"></p>
+					<label class="dictionary-option"><input id="dictionary-validation" type="checkbox" checked /> Validate clues using the dictionary</label>
 					<div class="btn-row lobby-actions">
 						<button id="btn-start" class="success" hidden>Start Game</button>
 						<button id="btn-leave" class="secondary">Leave Lobby</button>
@@ -656,6 +695,7 @@
 
 				<!-- CLUE INPUT -->
 				<section id="clue-input">
+					<div class="clue-stage-main">
 					<h2>Write your clue</h2>
 					<p id="clue-role-msg" class="role-msg"></p>
 					<div class="card" id="clue-word"></div>
@@ -664,6 +704,12 @@
 						<button id="btn-submit-clue">Submit Clue</button>
 					</div>
 					<p id="clue-wait" class="hidden role-msg"></p>
+					</div>
+					<aside class="submission-panel" aria-label="Clue submission status">
+						<h3>Your team</h3>
+						<p>Green glow means submitted.</p>
+						<ul id="clue-roster"></ul>
+					</aside>
 				</section>
 
 				<!-- SIMILARITY VOTING -->
@@ -692,6 +738,7 @@
 				<section id="round-end">
 					<h2>Round Results</h2>
 					<div class="card" id="end-word" style="margin-top: 0.5rem;"></div>
+					<p id="end-guess" class="guess-caption"></p>
 					
 					<div class="stats-box">
 						<div>Team Score</div>
@@ -699,8 +746,8 @@
 					</div>
 					
 					<h3>Submitted Clues:</h3>
-					<ul id="end-clues"></ul>
-					<p class="section-copy">Take your time. Any player can continue when everyone is ready.</p>
+					<div id="end-clues"></div>
+					<p class="section-copy">Take your time. The host will continue when everyone is ready.</p>
 					<button id="btn-next-round" class="success">Next Guesser</button>
 				</section>
 

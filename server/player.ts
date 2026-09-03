@@ -28,6 +28,9 @@ export default class Player {
 		this._exposeInterface(jsonrpc);
 
 		ws.addEventListener("message", e => io.onData(e.data));
+		ws.addEventListener("message", () => {
+			if (this.game) this.game.ts = performance.now();
+		});
 		ws.addEventListener("close", () => {
 			const { game } = this;
 			this._log("disconnected");
@@ -44,7 +47,8 @@ export default class Player {
 			clue: this.clue,
 			clueValid: this.clueValid,
 			votedDuplicatePairs: this.votedDuplicatePairs,
-			readyForLobby: this.readyForLobby
+			readyForLobby: this.readyForLobby,
+			hasSubmittedClue: this.clue !== null
 		};
 	}
 
@@ -55,12 +59,14 @@ export default class Player {
 	_exposeInterface(jsonrpc: JsonRpc) {
 		// Lobby setup
 		jsonrpc.expose("create-game", (gameName: string, playerName: string) => {
+			if (this.game) throw new Error("Already in a game");
 			this.name = playerName;
 			this.game = new Game(gameName, this);
 			return this.key;
 		});
 
 		jsonrpc.expose("join-game", (gameName: string, playerName: string) => {
+			if (this.game) throw new Error("Already in a game");
 			const game = Game.find(gameName);
 			if (!game) { throw new Error(`Game "${gameName}" does not exist`); }
 
@@ -116,12 +122,20 @@ export default class Player {
 
 		jsonrpc.expose("next-round", () => {
 			if (!this.game) throw new Error("Not in game");
-			this.game.advanceAfterRound();
+			this.game.advanceAfterRound(this);
 		});
 
 		jsonrpc.expose("return-to-lobby", () => {
 			if (!this.game) throw new Error("Not in game");
 			this.game.returnToLobby(this);
+		});
+		jsonrpc.expose("set-dictionary-validation", (enabled: boolean) => {
+			if (!this.game) throw new Error("Not in game");
+			this.game.setDictionaryValidation(this, enabled);
+		});
+		jsonrpc.expose("set-paused", (paused: boolean) => {
+			if (!this.game) throw new Error("Not in game");
+			this.game.setPaused(this, paused);
 		});
 	}
 }

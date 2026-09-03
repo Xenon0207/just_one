@@ -1,5 +1,6 @@
 import Player from "./player.ts";
 import { Phase, GameState, CluePair, RoundResult } from "../src/rules.ts";
+import { stemmer } from "npm:stemmer@2.0.1";
 
 let games: Game[] = [];
 const GARBAGE_THRESHOLD = 30 * 60 * 1000;
@@ -44,6 +45,10 @@ export default class Game {
 	_round = 0;
 	_secretWord: string | null = null;
 	_guesserIndex = -1;
+	_guesserOrder: Player[] = [];
+	_currentGuesser: Player | null = null;
+	paused = false;
+	dictionaryValidation = true;
 	_timerMs = 0;
 	_timerInterval: ReturnType<typeof setInterval> | null = null;
 	_similarPairs: CluePair[] = [];
@@ -87,7 +92,7 @@ export default class Game {
 		if (index == -1) { return; }
 
 		this._players.splice(index, 1);
-		this._assignDefaultColors();
+		if (this.phase === Phase.LOBBY) this._assignDefaultColors();
 		this.ts = performance.now();
 		player.game = null;
 
@@ -95,6 +100,11 @@ export default class Game {
 		if (player == this.owner && this._players.length) this.owner = this._players[0];
 
 		if (this._players.length) {
+			if (player === this._currentGuesser && ![Phase.ROUND_END, Phase.GAME_END, Phase.LOBBY].includes(this.phase)) {
+				// Keep the result boundary manual even if the guesser disconnects.
+				this.clearTimer();
+				this.phase = Phase.ROUND_END;
+			}
 			if (this.phase === Phase.GAME_END && this._players.every(p => p.readyForLobby)) {
 				this._resetToLobby();
 			} else {
@@ -106,12 +116,37 @@ export default class Game {
 	}
 
 	start() {
+		this._assertRunning();
 		if (this.phase != Phase.LOBBY) { throw new Error("Too late to start this game"); }
 		this._guesserIndex = -1;
 		this._teamScore = 0;
 		this._round = 0;
 		this._roundResults = [];
+		this.paused = false;
+		this._guesserOrder = [...this._players];
+		for (let i = this._guesserOrder.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[this._guesserOrder[i], this._guesserOrder[j]] = [this._guesserOrder[j], this._guesserOrder[i]];
+		}
 		this._advanceSetupRound();
+	}
+
+	setDictionaryValidation(player: Player, enabled: boolean) {
+		if (player !== this.owner || this.phase !== Phase.LOBBY) throw new Error("Only the host can change lobby settings");
+		if (typeof enabled !== "boolean") throw new Error("Invalid dictionary setting");
+		this.dictionaryValidation = enabled;
+		this._notifyGameChange();
+	}
+
+	setPaused(player: Player, paused: boolean) {
+		if (player !== this.owner) throw new Error("Only the host can pause or resume");
+		if (typeof paused !== "boolean") throw new Error("Invalid pause setting");
+		this.paused = paused;
+		this._notifyGameChange();
+	}
+
+	_assertRunning() {
+		if (this.paused) throw new Error("The host has paused the game");
 	}
 
 	getAvailableColors() {
@@ -137,15 +172,21 @@ export default class Game {
 		this.clearTimer();
 		this._round++;
 		this._guesserIndex++;
+		while (this._guesserIndex < this._guesserOrder.length && !this._players.includes(this._guesserOrder[this._guesserIndex])) {
+			this._guesserIndex++;
+		}
 
-		if (this._guesserIndex >= this._players.length) {
+		if (this._guesserIndex >= this._guesserOrder.length) {
 			this.phase = Phase.GAME_END;
+			this._currentGuesser = null;
+			this._players.forEach(p => p.isGuesser = false);
 			this._notifyGameChange();
 			return;
 		}
 
-		this._players.forEach((p, index) => {
-			p.isGuesser = (index === this._guesserIndex);
+		this._currentGuesser = this._guesserOrder[this._guesserIndex];
+		this._players.forEach(p => {
+			p.isGuesser = p === this._currentGuesser;
 			p.clue = null;
 			p.clueValid = null;
 			p.votedDuplicatePairs = {};
@@ -171,6 +212,7 @@ export default class Game {
 	}
 
 	voteSkip(player: Player) {
+		this._assertRunning();
 		if (this.phase !== Phase.DRAW || player.isGuesser) return;
 		player.hasVotedSkip = true;
 		this._drawWord(); // Re-draw for the same guesser and round
@@ -187,6 +229,7 @@ export default class Game {
 	}
 
 	submitClue(player: Player, clue: string) {
+		this._assertRunning();
 		if (this.phase !== Phase.CLUE_INPUT || player.isGuesser) return;
 		player.clue = clue.trim();
 		this._notifyGameChange();
@@ -219,7 +262,7 @@ export default class Game {
 
 			// The full dictionary is used only to validate submitted clues.
 			const existsInDict = CLUE_DICTIONARY.has(c.toLowerCase());
-			if (!existsInDict) return;
+			if (this.dictionaryValidation && !existsInDict) return;
 
 			// Substring check
 			const cLower = c.toLowerCase();
@@ -240,16 +283,19 @@ export default class Game {
 			}
 		});
 
-		// 3. Similarity check using Levenshtein distance
+		// 3. Nearby spellings and shared stems are voting candidates, not automatic discards.
 		const validPlayers = this._players.filter(p => !p.isGuesser && p.clueValid);
+		const normalizedClues = validPlayers.map(p => p.clue!.toLowerCase().replace(/-/g, ""));
+		const clueStems = normalizedClues.map(clue => stemmer(clue));
 		this._similarPairs = [];
 
 		for (let i = 0; i < validPlayers.length; i++) {
 			for (let j = i + 1; j < validPlayers.length; j++) {
 				const p1 = validPlayers[i];
 				const p2 = validPlayers[j];
-				const dist = this.levenshtein(p1.clue!.toLowerCase().replace(/-/g, ""), p2.clue!.toLowerCase().replace(/-/g, ""));
-				if (dist <= 2) {
+				const dist = this.levenshtein(normalizedClues[i], normalizedClues[j]);
+				const sameStem = clueStems[i].length > 0 && clueStems[i] === clueStems[j];
+				if (dist <= 2 || sameStem) {
 					this._similarPairs.push({
 						id: `pair-${i}-${j}`,
 						clue1: p1.clue!,
@@ -277,6 +323,7 @@ export default class Game {
 	}
 
 	voteDuplicate(player: Player, pairId: string, keep: boolean) {
+		this._assertRunning();
 		if (this.phase !== Phase.VOTE_SIMILARITY || player.isGuesser) return;
 		const pair = this._similarPairs.find(p => p.id === pairId);
 		if (!pair) return;
@@ -325,6 +372,7 @@ export default class Game {
 	}
 
 	submitGuess(player: Player, guess: string) {
+		this._assertRunning();
 		if (this.phase !== Phase.GUESS || !player.isGuesser) return;
 		
 		const correct = guess.trim().toLowerCase() === this._secretWord?.toLowerCase();
@@ -338,6 +386,7 @@ export default class Game {
 			guesserColor: player.color,
 			correct,
 			word: this._secretWord || "",
+			guess: guess.trim(),
 			validClues: this._players
 				.filter(clueGiver => !clueGiver.isGuesser && clueGiver.clueValid)
 				.map(clueGiver => ({
@@ -358,12 +407,15 @@ export default class Game {
 		this._notifyGameChange();
 	}
 
-	advanceAfterRound() {
+	advanceAfterRound(player: Player) {
+		if (player !== this.owner) throw new Error("Only the host can continue");
+		this._assertRunning();
 		if (this.phase !== Phase.ROUND_END) return;
 		this._advanceSetupRound();
 	}
 
 	returnToLobby(player: Player) {
+		this._assertRunning();
 		if (this.phase !== Phase.GAME_END) return;
 		player.readyForLobby = true;
 		if (this._players.every(p => p.readyForLobby)) {
@@ -378,6 +430,9 @@ export default class Game {
 		this.phase = Phase.LOBBY;
 		this._round = 0;
 		this._guesserIndex = -1;
+		this._currentGuesser = null;
+		this._guesserOrder = [];
+		this.paused = false;
 		this._secretWord = null;
 		this._similarPairs = [];
 		this._teamScore = 0;
@@ -396,22 +451,30 @@ export default class Game {
 	getInfo(player: Player): GameState {
 		return {
 			phase: this.phase,
+			paused: this.paused,
+			dictionaryValidation: this.dictionaryValidation,
 			isOwner: player === this.owner,
-			players: this._players.map(p => p.toJSON()),
+			players: this._players.map(p => {
+				const state = p.toJSON();
+				// Submission progress never needs to reveal the submitted word.
+				if (p !== player && (this.phase === Phase.CLUE_INPUT || (player.isGuesser && this.phase === Phase.VOTE_SIMILARITY))) state.clue = null;
+				return state;
+			}),
 			availableColors: this.getAvailableColors(),
 			// Hide secret word from guesser unless round is over
 			secretWord: (this.phase === Phase.ROUND_END || this.phase === Phase.GAME_END || !player.isGuesser) ? this._secretWord : null,
-			guesserName: this._players[this._guesserIndex]?.name || null,
+			guesserName: this._currentGuesser?.name || null,
 			timerMs: this._timerMs,
-			similarPairs: this._similarPairs,
+			similarPairs: player.isGuesser ? [] : this._similarPairs,
 			teamScore: this._teamScore,
 			round: this._round,
-			totalRounds: this._players.length,
+			totalRounds: this._round + this._guesserOrder.slice(this._guesserIndex + 1).filter(p => this._players.includes(p)).length,
 			roundResults: this._roundResults
 		};
 	}
 
 	close(reason: "destroy" | "over") {
+		this.clearTimer();
 		this._log("closed, reason:", reason);
 
 		while (this._players.length) {
@@ -425,6 +488,7 @@ export default class Game {
 	}
 
 	_notifyGameChange() {
+		this.ts = performance.now();
 		this._players.forEach(player => player.jsonrpc.notify("game-change", []));
 	}
 
@@ -437,6 +501,7 @@ export default class Game {
 		this._timerMs = ms;
 		const tick = 1000;
 		this._timerInterval = setInterval(() => {
+			if (this.paused) return;
 			this._timerMs -= tick;
 			if (this._timerMs <= 0) {
 				clearInterval(this._timerInterval!);
@@ -480,14 +545,14 @@ export default class Game {
 	}
 }
 
-function collectGarbage() {
+export function collectGarbage() {
 	let now = performance.now();
-	games = games.filter(game => {
-		if ((now-game.ts) < GARBAGE_THRESHOLD) { return true; }
+	for (const game of [...games]) {
+		if ((now-game.ts) < GARBAGE_THRESHOLD) continue;
 		console.log("Closing idle game", game.name);
 		game.close("destroy");
-		return false;
-	});
+	}
 }
 
-setInterval(collectGarbage, 5*1000);
+const garbageTimer = setInterval(collectGarbage, 5*1000);
+Deno.unrefTimer(garbageTimer);

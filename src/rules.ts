@@ -19,6 +19,7 @@ export interface PlayerState {
 	clueValid: boolean | null; // null if not yet validated
 	votedDuplicatePairs: Record<string, boolean>; // pairId -> keep?
 	readyForLobby: boolean;
+	hasSubmittedClue: boolean;
 }
 
 export interface CluePair {
@@ -41,12 +42,15 @@ export interface RoundResult {
 	guesserColor: string;
 	correct: boolean;
 	word: string;
+	guess: string;
 	validClues: RoundClue[];
 	invalidClues: RoundClue[];
 }
 
 export interface GameState {
 	phase: Phase;
+	paused: boolean;
+	dictionaryValidation: boolean;
 	isOwner: boolean;
 	players: PlayerState[];
 	availableColors: string[];

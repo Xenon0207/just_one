@@ -65,7 +65,7 @@ function createCallMessage(method: string, params: Params, id?: string): CallMes
 
 export default class JsonRpc {
 	_interface = new Map<string, Function>();
-	_pendingPromises = new Map<string, {resolve:Function, reject:Function}>();
+	_pendingPromises = new Map<string, {resolve:Function, reject:Function, timer: ReturnType<typeof setTimeout>}>();
 	_options: Options = {
 		log: false
 	}
@@ -83,9 +83,25 @@ export default class JsonRpc {
 		let id = Math.random().toString();
 		let message = createCallMessage(method, params, id);
 		return new Promise((resolve, reject) => {
-			this._pendingPromises.set(id, {resolve, reject})
-			this._send(message);
+			const timer = setTimeout(() => {
+				this._pendingPromises.delete(id);
+				reject(new Error("Server did not respond. Please try again."));
+			}, 10000);
+			this._pendingPromises.set(id, {resolve, reject, timer});
+			try { this._send(message); } catch (error) {
+				clearTimeout(timer);
+				this._pendingPromises.delete(id);
+				reject(error);
+			}
 		});
+	}
+
+	disconnect() {
+		this._pendingPromises.forEach(p => {
+			clearTimeout(p.timer);
+			p.reject(new Error("Connection lost. Refresh to reconnect."));
+		});
+		this._pendingPromises.clear();
 	}
 
 	notify(method: string, params: Params) {
@@ -140,7 +156,8 @@ export default class JsonRpc {
 		} else if (message.id) { // result/error
 
 			let promise = this._pendingPromises.get(message.id);
-			if (!promise) { throw new Error(`Received a non-matching response id "${message.id}"`); }
+			if (!promise) return null; // A response may arrive after its timeout.
+			clearTimeout(promise.timer);
 			this._pendingPromises.delete(message.id);
 			("error" in message ? promise.reject(message.error) : promise.resolve(message.result));
 

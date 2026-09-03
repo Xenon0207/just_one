@@ -2,6 +2,7 @@
   "name": "just-one",
   "version": "1.0.0",
   "scripts": {
+    "test": "npx -y deno@2.9.3 test --allow-read server/game_test.ts server/client_rpc_test.ts",
     "build": "npx tsc && npx rollup .build/client/app.js -f iife -o client/client.js",
     "start": "deno run --allow-net --allow-read server/server.ts 8080"
   },

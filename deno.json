@@ -1,4 +1,5 @@
 {
+  "nodeModulesDir": "none",
   "deploy": {
     "runtime": {
       "type": "dynamic",

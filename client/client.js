@@ -43,9 +43,27 @@
             let id = Math.random().toString();
             let message = createCallMessage(method, params, id);
             return new Promise((resolve, reject) => {
-                this._pendingPromises.set(id, { resolve, reject });
-                this._send(message);
+                const timer = setTimeout(() => {
+                    this._pendingPromises.delete(id);
+                    reject(new Error("Server did not respond. Please try again."));
+                }, 10000);
+                this._pendingPromises.set(id, { resolve, reject, timer });
+                try {
+                    this._send(message);
+                }
+                catch (error) {
+                    clearTimeout(timer);
+                    this._pendingPromises.delete(id);
+                    reject(error);
+                }
             });
+        }
+        disconnect() {
+            this._pendingPromises.forEach(p => {
+                clearTimeout(p.timer);
+                p.reject(new Error("Connection lost. Refresh to reconnect."));
+            });
+            this._pendingPromises.clear();
         }
         notify(method, params) {
             let message = createCallMessage(method, params);
@@ -94,9 +112,9 @@
             }
             else if (message.id) { // result/error
                 let promise = this._pendingPromises.get(message.id);
-                if (!promise) {
-                    throw new Error(`Received a non-matching response id "${message.id}"`);
-                }
+                if (!promise)
+                    return null; // A response may arrive after its timeout.
+                clearTimeout(promise.timer);
                 this._pendingPromises.delete(message.id);
                 ("error" in message ? promise.reject(message.error) : promise.resolve(message.result));
             }
@@ -129,6 +147,27 @@
     let rpc = null;
     let playerName = "";
     let gameName = "";
+    let lastPhase = null;
+    let lastRound = -1;
+    let syncing = false;
+    let syncAgain = false;
+    function showError(error) {
+        const el = document.getElementById("connection-status");
+        el.textContent = (error === null || error === void 0 ? void 0 : error.message) || "Something went wrong. Please try again.";
+        el.hidden = false;
+    }
+    async function action(method, params = []) {
+        try {
+            if (!rpc)
+                throw new Error("Connection lost. Refresh to reconnect.");
+            await rpc.call(method, params);
+            await sync();
+        }
+        catch (error) {
+            await sync();
+            showError(error);
+        }
+    }
     // UI Elements
     const sections = {
         setup: document.getElementById("setup"),
@@ -149,7 +188,7 @@
         { label: "Clues", rule: "Give exactly one word. Do not use the mystery word itself." },
         { label: "Review", rule: "Review similar clues. You may change your vote until everyone has voted." },
         { label: "Guess", rule: "The guesser gets one attempt using only the valid clues." },
-        { label: "Result", rule: "Review the answer and clues. Any player can continue when the group is ready." },
+        { label: "Result", rule: "Review the answer and clues. The host continues when the group is ready." },
         { label: "Summary", rule: "Review every round in guesser order, then everyone returns to the lobby together." }
     ];
     function stepIndexForPhase(phase) {
@@ -233,6 +272,10 @@
             const strong = document.createElement("strong");
             strong.textContent = result.word;
             word.appendChild(strong);
+            const guessed = document.createElement("small");
+            guessed.className = "summary-guess";
+            guessed.textContent = `Guess: ${result.guess || "(no guess)"}`;
+            word.appendChild(guessed);
             card.append(header, word);
             appendClueGroup(card, "Valid clues", result.validClues);
             appendClueGroup(card, "Invalid clues", result.invalidClues, true);
@@ -264,6 +307,15 @@
                 };
                 ws.addEventListener("message", e => io.onData(e.data));
                 rpc = new JsonRpc(io);
+                const connectedRpc = rpc;
+                const poll = setInterval(() => void sync(), 15000);
+                ws.addEventListener("close", () => {
+                    clearInterval(poll);
+                    connectedRpc.disconnect();
+                    if (rpc === connectedRpc)
+                        rpc = null;
+                    showError(new Error("Connection lost. Refresh to reconnect."));
+                });
                 rpc.expose("game-change", () => sync());
                 rpc.expose("game-destroy", () => {
                     alert("The game has been cancelled");
@@ -295,17 +347,53 @@
     async function sync() {
         if (!rpc)
             return;
-        const state = await rpc.call("game-info", []);
-        if (!state)
+        if (syncing) {
+            syncAgain = true;
             return;
-        render(state);
+        }
+        syncing = true;
+        try {
+            do {
+                syncAgain = false;
+                const state = await rpc.call("game-info", []);
+                if (!state) {
+                    if (lastPhase)
+                        showError(new Error("This room is no longer available. Refresh to join a room."));
+                    return;
+                }
+                document.getElementById("connection-status").hidden = true;
+                render(state);
+            } while (syncAgain && rpc);
+        }
+        catch (error) {
+            showError(error);
+        }
+        finally {
+            syncing = false;
+        }
     }
     function render(state) {
         updateTimer(state.timerMs);
+        const enteredRoundEnd = state.phase === Phase.ROUND_END && (lastPhase !== state.phase || lastRound !== state.round);
+        if (lastPhase !== state.phase || lastRound !== state.round) {
+            document.getElementById("clue-text").value = "";
+            document.getElementById("guess-text").value = "";
+            document.getElementById("clue-wait").textContent = "";
+        }
+        lastPhase = state.phase;
+        lastRound = state.round;
+        document.querySelector(".page-shell").classList.toggle("summary-layout", state.phase === Phase.GAME_END);
+        document.querySelector(".page-shell").classList.toggle("clue-layout", state.phase === Phase.CLUE_INPUT);
+        document.querySelectorAll("main button, main input").forEach(el => el.disabled = false);
         const myPlayer = state.players.find(p => p.name === playerName);
         if (!myPlayer)
             return;
         renderGameHud(state, myPlayer);
+        const pause = document.getElementById("btn-pause");
+        pause.hidden = !state.isOwner;
+        pause.textContent = state.paused ? "Resume Game" : "Pause Game";
+        pause.onclick = () => action("set-paused", [!state.paused]);
+        document.getElementById("pause-status").hidden = !state.paused;
         switch (state.phase) {
             case Phase.LOBBY: {
                 showSection("lobby");
@@ -344,17 +432,27 @@
                     const selected = color.toUpperCase() === myPlayer.color.toUpperCase();
                     swatch.classList.toggle("is-selected", selected);
                     swatch.setAttribute("aria-pressed", selected.toString());
-                    swatch.onclick = () => rpc.call("set-color", [color]);
+                    swatch.onclick = () => action("set-color", [color]);
                     colorOptions.appendChild(swatch);
                 });
                 const btnStart = document.getElementById("btn-start");
                 btnStart.hidden = !state.isOwner;
-                btnStart.onclick = () => rpc.call("start-game", []);
+                btnStart.onclick = () => action("start-game");
+                const dictionary = document.getElementById("dictionary-validation");
+                dictionary.checked = state.dictionaryValidation;
+                dictionary.disabled = !state.isOwner;
+                dictionary.onchange = () => action("set-dictionary-validation", [dictionary.checked]);
                 const btnLeave = document.getElementById("btn-leave");
                 btnLeave.onclick = async () => {
                     btnLeave.disabled = true;
-                    await rpc.call("quit-game", []);
-                    location.reload();
+                    try {
+                        await rpc.call("quit-game", []);
+                        location.reload();
+                    }
+                    catch (error) {
+                        btnLeave.disabled = false;
+                        showError(error);
+                    }
                 };
                 const lobbyStatus = document.getElementById("lobby-status");
                 lobbyStatus.textContent = state.isOwner
@@ -375,7 +473,7 @@
                 skipBtn.hidden = myPlayer.isGuesser || myPlayer.hasVotedSkip;
                 skipBtn.onclick = () => {
                     skipBtn.hidden = true;
-                    rpc.call("vote-skip", []);
+                    void action("vote-skip");
                 };
                 break;
             }
@@ -386,9 +484,26 @@
                 document.getElementById("clue-word").textContent = state.secretWord ? state.secretWord : "???";
                 const form = document.getElementById("clue-form");
                 const wait = document.getElementById("clue-wait");
+                const roster = document.getElementById("clue-roster");
+                roster.replaceChildren();
+                state.players.forEach(p => {
+                    const row = document.createElement("li");
+                    row.className = `submission-player${!p.isGuesser && p.hasSubmittedClue ? " submitted" : ""}`;
+                    const avatar = document.createElement("span");
+                    avatar.className = "player-avatar";
+                    avatar.style.backgroundColor = p.color;
+                    avatar.textContent = p.name.slice(0, 1).toUpperCase();
+                    const label = document.createElement("span");
+                    label.textContent = p.name;
+                    const status = document.createElement("small");
+                    status.textContent = p.isGuesser ? "Guesser" : p.hasSubmittedClue ? "Submitted" : "";
+                    row.append(avatar, label, status);
+                    roster.appendChild(row);
+                });
                 if (myPlayer.isGuesser) {
                     form.classList.add("hidden");
                     wait.classList.remove("hidden");
+                    wait.textContent = "Waiting for the team to submit clues.";
                 }
                 else if (myPlayer.clue !== null) {
                     form.classList.add("hidden");
@@ -401,7 +516,7 @@
                     const input = document.getElementById("clue-text");
                     const btn = document.getElementById("btn-submit-clue");
                     btn.onclick = () => {
-                        rpc.call("submit-clue", [input.value]);
+                        void action("submit-clue", [input.value]);
                         input.value = "";
                     };
                 }
@@ -432,12 +547,12 @@
                     btnKeep.className = `success vote-option${selectedVote === true ? " is-selected" : ""}`;
                     btnKeep.textContent = "Keep";
                     btnKeep.setAttribute("aria-pressed", (selectedVote === true).toString());
-                    btnKeep.onclick = () => rpc.call("vote-duplicate", [pair.id, true]);
+                    btnKeep.onclick = () => action("vote-duplicate", [pair.id, true]);
                     const btnDiscard = document.createElement("button");
                     btnDiscard.className = `danger vote-option${selectedVote === false ? " is-selected" : ""}`;
                     btnDiscard.textContent = "Discard";
                     btnDiscard.setAttribute("aria-pressed", (selectedVote === false).toString());
-                    btnDiscard.onclick = () => rpc.call("vote-duplicate", [pair.id, false]);
+                    btnDiscard.onclick = () => action("vote-duplicate", [pair.id, false]);
                     btnRow.append(btnKeep, btnDiscard);
                     div.appendChild(btnRow);
                     if (selectedVote !== undefined) {
@@ -471,7 +586,7 @@
                     const input = document.getElementById("guess-text");
                     const btn = document.getElementById("btn-submit-guess");
                     btn.onclick = () => {
-                        rpc.call("submit-guess", [input.value]);
+                        void action("submit-guess", [input.value]);
                         input.value = "";
                     };
                 }
@@ -484,26 +599,31 @@
                 showSection("roundEnd");
                 document.getElementById("end-word").textContent = state.secretWord || "???";
                 document.getElementById("end-score").textContent = state.teamScore.toString();
+                const result = state.roundResults.find(r => r.round === state.round);
+                document.getElementById("end-guess").textContent = `Guess: ${(result === null || result === void 0 ? void 0 : result.guess) || "(no guess)"}`;
+                const score = document.getElementById("end-score");
+                score.classList.toggle("score-correct", !!(result === null || result === void 0 ? void 0 : result.correct));
+                if (enteredRoundEnd) {
+                    score.classList.remove("score-pop");
+                    if (result === null || result === void 0 ? void 0 : result.correct) {
+                        void score.offsetWidth;
+                        score.classList.add("score-pop");
+                    }
+                }
                 const list = document.getElementById("end-clues");
                 list.innerHTML = "";
-                state.players.forEach(p => {
-                    if (!p.isGuesser) {
-                        const li = createColoredClue({
-                            playerName: p.name,
-                            playerColor: p.color,
-                            clue: p.clue || "(no clue)"
-                        }, !p.clueValid);
-                        li.title = p.clueValid ? "Valid clue" : "Discarded clue";
-                        list.appendChild(li);
-                    }
-                });
+                appendClueGroup(list, "Valid clues", (result === null || result === void 0 ? void 0 : result.validClues) || []);
+                appendClueGroup(list, "Invalid clues", (result === null || result === void 0 ? void 0 : result.invalidClues) || [], true);
                 const btnNext = document.getElementById("btn-next-round");
                 btnNext.disabled = false;
+                btnNext.hidden = !state.isOwner;
                 btnNext.textContent = state.round >= state.totalRounds ? "View Final Results" : "Next Guesser";
                 btnNext.onclick = async () => {
                     btnNext.disabled = true;
                     btnNext.textContent = "Continuing...";
-                    await rpc.call("next-round", []);
+                    await action("next-round");
+                    if (lastPhase === Phase.ROUND_END)
+                        btnNext.disabled = false;
                 };
                 break;
             }
@@ -513,17 +633,23 @@
                 renderGameHistory(state);
                 const readyCount = state.players.filter(player => player.readyForLobby).length;
                 const returnStatus = document.getElementById("return-lobby-status");
-                returnStatus.textContent = `${readyCount} of ${state.players.length} players are ready to return.`;
+                const waitingNames = state.players.filter(p => !p.readyForLobby).map(p => p.name);
+                returnStatus.textContent = `${readyCount} of ${state.players.length} players are ready to return. Waiting for: ${waitingNames.join(", ") || "nobody"}.`;
                 const btnReturn = document.getElementById("btn-return-lobby");
                 btnReturn.disabled = myPlayer.readyForLobby;
                 btnReturn.textContent = myPlayer.readyForLobby ? "Waiting for Everyone..." : "Return to Lobby";
                 btnReturn.onclick = async () => {
                     btnReturn.disabled = true;
                     btnReturn.textContent = "Waiting for Everyone...";
-                    await rpc.call("return-to-lobby", []);
+                    await action("return-to-lobby");
+                    if (lastPhase === Phase.GAME_END)
+                        btnReturn.disabled = false;
                 };
                 break;
             }
+        }
+        if (state.paused) {
+            document.querySelectorAll("main button, main input").forEach(el => el.disabled = true);
         }
     }
     document.getElementById("btn-create").onclick = () => joinOrCreate("create");

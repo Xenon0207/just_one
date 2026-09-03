@@ -11,7 +11,8 @@
     "jsr:@std/media-types@^1.1.0": "1.1.0",
     "jsr:@std/net@^1.0.6": "1.0.6",
     "jsr:@std/path@^1.1.6": "1.1.6",
-    "jsr:@std/streams@^1.1.1": "1.1.1"
+    "jsr:@std/streams@^1.1.1": "1.1.1",
+    "npm:stemmer@2.0.1": "2.0.1"
   },
   "jsr": {
     "@std/cli@1.0.32": {
@@ -60,6 +61,12 @@
     },
     "@std/streams@1.1.1": {
       "integrity": "92556d350e537e9dce527a6d08f6f15be3ff65e656079dea69d15252187c7613"
+    }
+  },
+  "npm": {
+    "stemmer@2.0.1": {
+      "integrity": "sha512-bkWvSX2JR4nSZFfs113kd4C6X13bBBrg4fBKv2pVdzpdQI2LA5pZcWzTFNdkYsiUNl13E4EzymSRjZ0D55jBYg==",
+      "bin": true
     }
   },
   "remote": {
